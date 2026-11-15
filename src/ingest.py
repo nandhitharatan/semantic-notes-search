@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -12,7 +13,7 @@ from dotenv import load_dotenv
 from psycopg2.extras import execute_values
 from pypdf import PdfReader
 from qdrant_client import QdrantClient
-from qdrant_client.models import PointStruct
+from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
 from sentence_transformers import SentenceTransformer
 
 
@@ -190,7 +191,41 @@ def _mark_job_completed(job_id: int) -> None:
         connection.close()
 
 
-def ingest_pdf(path: str | Path, subject: str, user_id: int) -> dict[str, int]:
+def _job_status(job_id: int) -> str:
+    """Read the durable job state so the CLI can show PostgreSQL's consistency record."""
+    connection = psycopg2.connect(_required_setting("POSTGRES_URL"))
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT status FROM ingestion_jobs WHERE job_id = %s", (job_id,)
+            )
+            row = cursor.fetchone()
+    finally:
+        connection.close()
+
+    if row is None:
+        raise RuntimeError(f"Ingestion job {job_id} was not found.")
+    return row[0]
+
+
+def _qdrant_point_count(doc_id: int) -> int:
+    """Count a document's vectors to verify its PostgreSQL chunks reached the vector index."""
+    result = _qdrant_client().count(
+        collection_name=COLLECTION_NAME,
+        count_filter=Filter(
+            must=[
+                FieldCondition(
+                    key="doc_id",
+                    match=MatchValue(value=doc_id),
+                )
+            ]
+        ),
+        exact=True,
+    )
+    return result.count
+
+
+def ingest_pdf(path: str | Path, subject: str, user_id: int) -> dict[str, int | str]:
     """Ingest one PDF using PostgreSQL as the durable source of truth and Qdrant as its vector index."""
     if not subject.strip():
         raise ValueError("subject must not be empty")
@@ -214,4 +249,30 @@ def ingest_pdf(path: str | Path, subject: str, user_id: int) -> dict[str, int]:
         ) from error
 
     _mark_job_completed(job_id)
-    return {"doc_id": doc_id, "job_id": job_id, "chunk_count": len(chunk_records)}
+    return {
+        "doc_id": doc_id,
+        "job_id": job_id,
+        "chunk_count": len(chunk_records),
+        "job_status": _job_status(job_id),
+        "qdrant_point_count": _qdrant_point_count(doc_id),
+    }
+
+
+def main() -> None:
+    """Run one ingestion from the command line to make the two-database result observable."""
+    if len(sys.argv) != 4:
+        raise SystemExit(
+            "Usage: py src/ingest.py <pdf_path> <subject> <user_id>"
+        )
+
+    result = ingest_pdf(sys.argv[1], sys.argv[2], int(sys.argv[3]))
+    print(
+        "Ingestion complete: "
+        f"chunks={result['chunk_count']}, "
+        f"job_status={result['job_status']}, "
+        f"qdrant_points={result['qdrant_point_count']}"
+    )
+
+
+if __name__ == "__main__":
+    main()

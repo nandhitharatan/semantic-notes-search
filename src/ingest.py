@@ -20,6 +20,7 @@ from sentence_transformers import SentenceTransformer
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 COLLECTION_NAME = "notes_chunks"
 CHUNK_SIZE = 500
+CHUNK_OVERLAP = 50
 EMBEDDING_BATCH_SIZE = 32
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 
@@ -36,13 +37,36 @@ def _required_setting(name: str) -> str:
 
 
 def _split_text(text: str) -> list[str]:
-    """Create fixed-size chunks, the unit PostgreSQL indexes and Qdrant stores separately."""
+    """Create overlapping word-boundary chunks so indexed units preserve border context."""
     normalised_text = " ".join(text.split())
-    return [
-        normalised_text[start : start + CHUNK_SIZE]
-        for start in range(0, len(normalised_text), CHUNK_SIZE)
-        if normalised_text[start : start + CHUNK_SIZE]
-    ]
+    chunks: list[str] = []
+    start = 0
+
+    while start < len(normalised_text):
+        if len(normalised_text) - start <= CHUNK_SIZE:
+            chunks.append(normalised_text[start:].strip())
+            break
+
+        boundary = normalised_text.rfind(" ", start + 1, start + CHUNK_SIZE + 1)
+        if boundary <= start:
+            raise ValueError("A word is longer than the 500-character chunk limit.")
+
+        chunks.append(normalised_text[start:boundary].strip())
+
+        overlap_target = max(start + 1, boundary - CHUNK_OVERLAP)
+        before_target = normalised_text.rfind(" ", start, overlap_target + 1)
+        after_target = normalised_text.find(" ", overlap_target, boundary)
+        candidates = [
+            position
+            for position in (before_target, after_target)
+            if start < position < boundary
+        ]
+        if not candidates:
+            raise ValueError("Could not find a word boundary for chunk overlap.")
+        overlap_boundary = min(candidates, key=lambda position: abs(position - overlap_target))
+        start = overlap_boundary + 1
+
+    return [chunk for chunk in chunks if chunk]
 
 
 def extract_pdf_chunks(path: str | Path) -> list[tuple[int, str]]:

@@ -65,3 +65,15 @@ py src/ingest_folder.py data --user-id 2
 
 Files that already have the same file name and subject in PostgreSQL are printed as
 `skipped`; this prevents duplicate relational rows and Qdrant points on later runs.
+
+## Step 2: PostgreSQL searches
+
+Run both SQL search methods from the project root:
+
+```powershell
+py -c "from src.search_sql import search_like, search_fts; print(search_like('database', 5)); print(search_fts('database', 5))"
+```
+
+`search_like` is the substring baseline. `search_fts` uses PostgreSQL's English
+full-text query and `ts_rank`, with the existing GIN index supporting the tsvector
+predicate.

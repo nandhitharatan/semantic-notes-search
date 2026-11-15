@@ -50,8 +50,8 @@ of Qdrant points for the new document.
 
 ## Ingest a subject folder
 
-Place PDFs in the layout `data/<SUBJECT>/<file>.pdf`, then ingest all of them with
-the default PostgreSQL user ID `1`:
+Place PDFs in `data\Java`, `data\DBMS`, or `data\Comp` (file names may contain
+spaces), then ingest all of them with the default PostgreSQL user ID `1`:
 
 ```powershell
 py src/ingest_folder.py data

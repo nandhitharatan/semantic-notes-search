@@ -13,6 +13,11 @@ from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SUBJECT_NAMES = {
+    "java": "Java",
+    "dbms": "DBMS",
+    "comp": "Comp",
+}
 if str(PROJECT_ROOT) not in sys.path:
     # Running "py src/ingest_folder.py" sets sys.path to src/, not the project root.
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -69,11 +74,15 @@ def _folder_pdfs(folder: Path) -> list[Path]:
 
 
 def _subject_for_pdf(folder: Path, pdf_path: Path) -> str:
-    """Use the first folder below data as the subject, keeping document metadata consistent."""
+    """Map a subject folder case-insensitively to the exact project subject value."""
     relative_path = pdf_path.relative_to(folder)
     if len(relative_path.parts) < 2:
         raise ValueError("expected layout: data/<SUBJECT>/<file>.pdf")
-    return relative_path.parts[0]
+    folder_name = relative_path.parts[0].casefold()
+    try:
+        return SUBJECT_NAMES[folder_name]
+    except KeyError as error:
+        raise ValueError("subject folder must be Java, DBMS, or Comp") from error
 
 
 def _totals() -> tuple[int, int]:

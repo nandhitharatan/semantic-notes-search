@@ -1,4 +1,4 @@
-"""Manually prove PostgreSQL keeps a PENDING ingestion job when Qdrant is down."""
+"""Manually prove a Qdrant failure leaves a PENDING job that the retry worker recovers."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.ingest import COLLECTION_NAME, ingest_pdf
+from database.retry_worker import run_worker
 
 
 FAILURE_SUBJECT = "FAILTEST"
@@ -119,6 +120,16 @@ def _print_failure_result(document: dict[str, Any] | None) -> None:
         print("FAIL: expected saved chunks and a PENDING ingestion job.")
 
 
+def _print_recovery_result(document: dict[str, Any] | None) -> None:
+    """Show whether the worker changed the failed job from PENDING to COMPLETED after Qdrant returned."""
+    if document is None:
+        print("FAIL: the FAILTEST document is missing after recovery.")
+    elif document["job_status"] == "COMPLETED":
+        print("PASS: the retry worker recovered the PENDING job and marked it COMPLETED.")
+    else:
+        print(f"FAIL: expected COMPLETED after recovery, found {document['job_status']}.")
+
+
 def cleanup_failtest() -> None:
     """Delete all FAILTEST rows and payload-filtered points so this manual consistency test is repeatable."""
     client = _qdrant_client()
@@ -163,7 +174,7 @@ def cleanup_failtest() -> None:
 
 
 def run_failure_test(pdf_path: str | Path) -> None:
-    """Pause for a manual Qdrant outage, then prove the failed vector write did not lose PostgreSQL data."""
+    """Pause for a manual outage, then prove the worker recovers the durable PENDING job."""
     pdf = Path(pdf_path)
     if not pdf.is_file():
         raise FileNotFoundError(f"PDF file not found: {pdf}")
@@ -181,10 +192,13 @@ def run_failure_test(pdf_path: str | Path) -> None:
 
     _print_failure_result(_latest_failure_document(pdf.name))
     print(f"Start Qdrant again with: docker start {container_name}")
+    input("After Qdrant has started, press Enter to run the retry worker: ")
+    run_worker()
+    _print_recovery_result(_latest_failure_document(pdf.name))
 
 
 def main() -> None:
-    """Run the manual failure proof for a PDF or remove all FAILTEST data with --cleanup."""
+    """Run the failure-and-recovery proof for a PDF or remove all FAILTEST data with --cleanup."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("pdf_path", nargs="?", help="Small PDF to ingest with subject FAILTEST")
     parser.add_argument(

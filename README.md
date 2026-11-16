@@ -77,3 +77,37 @@ py -c "from src.search_sql import search_like, search_fts; print(search_like('da
 `search_like` is the substring baseline. `search_fts` uses PostgreSQL's English
 full-text query and `ts_rank`, with the existing GIN index supporting the tsvector
 predicate.
+
+## Step 3: Qdrant vector search
+
+Run semantic search with the default HNSW settings:
+
+```powershell
+py -c "from src.search_vector import search_vector; print(search_vector('database temperature', 5))"
+```
+
+Pass `subject='DBMS'` to filter by payload, `exact=True` for exact search, or an
+`hnsw_ef` value to control query-time HNSW exploration.
+
+## Step 4: retry worker and recovery proof
+
+Apply the retry-count migration once:
+
+```powershell
+Get-Content database/002_add_ingestion_retry_count.sql -Raw | docker compose exec -T postgres psql -U admin -d notes_db
+```
+
+Run the worker to re-embed every retryable `PENDING` job and idempotently upsert its
+stable chunk UUIDs into Qdrant. It prints embedding and Qdrant-upsert times separately:
+
+```powershell
+py database/retry_worker.py
+```
+
+To prove failure and recovery, provide a small PDF, manually stop Qdrant when prompted,
+then start it again when prompted. The script verifies `PENDING` before recovery and
+`COMPLETED` after the worker runs:
+
+```powershell
+py database/test_failure_recovery.py "data\DBMS\INDEX, JOINS.pdf"
+```

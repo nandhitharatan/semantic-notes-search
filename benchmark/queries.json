@@ -1,0 +1,122 @@
+[
+  {
+    "id": "dbms_01",
+    "subject": "DBMS",
+    "keyword": "foreign key",
+    "question": "How does one table reference a row in another table to enforce referential integrity?"
+  },
+  {
+    "id": "dbms_02",
+    "subject": "DBMS",
+    "keyword": "primary key",
+    "question": "What uniquely identifies every record in a relation and cannot be null?"
+  },
+  {
+    "id": "dbms_03",
+    "subject": "DBMS",
+    "keyword": "inner join",
+    "question": "How do you combine rows from two tables keeping only those that have matching values on both sides?"
+  },
+  {
+    "id": "dbms_04",
+    "subject": "DBMS",
+    "keyword": "GIN index",
+    "question": "What type of index does PostgreSQL use to accelerate full-text search over document columns?"
+  },
+  {
+    "id": "dbms_05",
+    "subject": "DBMS",
+    "keyword": "cursor",
+    "question": "What mechanism lets a stored procedure iterate over a query result one row at a time?"
+  },
+  {
+    "id": "dbms_06",
+    "subject": "DBMS",
+    "keyword": "stored procedure",
+    "question": "How do you encapsulate a reusable block of SQL logic that can be called by name from an application?"
+  },
+  {
+    "id": "dbms_07",
+    "subject": "DBMS",
+    "keyword": "integrity constraint",
+    "question": "What rules are enforced at the schema level to prevent invalid or inconsistent data from being written?"
+  },
+  {
+    "id": "dbms_08",
+    "subject": "DBMS",
+    "keyword": "ts_rank",
+    "question": "How does PostgreSQL score and order documents by how well they match a full-text search query?"
+  },
+  {
+    "id": "java_01",
+    "subject": "Java",
+    "keyword": "inheritance",
+    "question": "How does a child class acquire the fields and methods of its parent without rewriting them?"
+  },
+  {
+    "id": "java_02",
+    "subject": "Java",
+    "keyword": "abstract class",
+    "question": "What kind of class cannot be directly instantiated and may declare methods that subclasses must implement?"
+  },
+  {
+    "id": "java_03",
+    "subject": "Java",
+    "keyword": "interface",
+    "question": "How do you define a contract in Java that multiple unrelated classes can agree to fulfil?"
+  },
+  {
+    "id": "java_04",
+    "subject": "Java",
+    "keyword": "exception handling",
+    "question": "What language construct lets a program recover gracefully when an unexpected runtime error occurs?"
+  },
+  {
+    "id": "java_05",
+    "subject": "Java",
+    "keyword": "ArrayList",
+    "question": "Which resizable collection in Java stores elements in order and allows random access by position?"
+  },
+  {
+    "id": "java_06",
+    "subject": "Java",
+    "keyword": "constructor overloading",
+    "question": "How can a class provide several different ways to initialise an object depending on which arguments are supplied?"
+  },
+  {
+    "id": "comp_01",
+    "subject": "Comp",
+    "keyword": "bus arbitration",
+    "question": "How does a computer decide which device gets control of the shared communication lines when several request it simultaneously?"
+  },
+  {
+    "id": "comp_02",
+    "subject": "Comp",
+    "keyword": "instruction cycle",
+    "question": "What are the repeating steps a processor performs from the moment it fetches an operation until it prepares for the next?"
+  },
+  {
+    "id": "comp_03",
+    "subject": "Comp",
+    "keyword": "cache memory",
+    "question": "What small, fast storage layer sits between the processor and main memory to reduce average access time?"
+  },
+  {
+    "id": "comp_04",
+    "subject": "Comp",
+    "keyword": "address bus",
+    "question": "Which set of lines carries the location in memory that the CPU wants to read from or write to?"
+  },
+  {
+    "id": "comp_05",
+    "subject": "Comp",
+    "keyword": "register",
+    "question": "What are the tiny, extremely fast storage locations built directly into the processor for holding operands and results?"
+  },
+  {
+    "id": "comp_06",
+    "subject": "Comp",
+    "keyword": "interrupt",
+    "question": "How does a peripheral device signal the CPU to pause its current work and handle an urgent event?"
+  }
+]

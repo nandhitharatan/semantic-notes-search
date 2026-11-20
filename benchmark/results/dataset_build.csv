@@ -1,0 +1,6 @@
+size,real_chunks,padded_chunks,pg_load_s,gin_build_s,qdrant_upload_s,qdrant_index_ready_s,index_complete
+1000,1000,0,0.096,0.086,0.231,2.036,True
+10000,8452,1548,0.44,0.617,2.839,2.045,True
+10000,8452,1548,0.334,0.631,2.395,2.033,True
+50000,8452,41548,1.539,3.016,11.897,2.03,True
+1000,1000,0,0.088,0.084,0.173,2.048,True

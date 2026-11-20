@@ -111,3 +111,63 @@ then start it again when prompted. The script verifies `PENDING` before recovery
 ```powershell
 py database/test_failure_recovery.py "data\DBMS\INDEX, JOINS.pdf"
 ```
+
+## Step 5: generate benchmark datasets
+
+Build the three benchmark datasets (1 k, 10 k, 50 k chunks) in dedicated
+Postgres tables and Qdrant collections.  Vectors are reused from
+`notes_chunks`; no re-embedding is needed.
+
+```powershell
+py benchmark/generate_data.py
+```
+
+To build a subset of sizes:
+
+```powershell
+py benchmark/generate_data.py --sizes 1000 10000
+```
+
+To drop and rebuild an existing dataset (each drop requires typing `YES`):
+
+```powershell
+py benchmark/generate_data.py --force
+```
+
+Timing metrics are saved to `benchmark/results/dataset_build.csv`.
+
+## Step 6: run benchmarks
+
+Measure latency and recall for five search methods (sql_like, sql_fts,
+qdrant_hnsw_ef16, qdrant_hnsw_ef128, qdrant_exact) across all three dataset
+sizes.  The model is loaded once and all embeddings are pre-computed before
+any timed section.
+
+Quick sanity check (3 queries, 2 runs — finishes in ~1 minute):
+
+```powershell
+py benchmark/run_benchmarks.py --quick
+```
+
+Full benchmark run (all 3 sizes, 20 queries, 10 recorded runs each):
+
+```powershell
+py benchmark/run_benchmarks.py
+```
+
+Benchmark a subset of sizes:
+
+```powershell
+py benchmark/run_benchmarks.py --sizes 1000 10000
+```
+
+Output files written to `benchmark/results/`:
+
+| File | Contents |
+|---|---|
+| `results.csv` | p50, p95, mean latency and recall@5 per (size, method) — overwritten each run |
+| `embedding_times.csv` | embedding time per query in ms |
+| `explain_<size>.txt` | EXPLAIN (ANALYZE, BUFFERS) for one LIKE and one FTS query per size |
+| `environment.txt` | Python, library, OS, CPU, RAM, Postgres and Qdrant versions |
+| `latency_vs_size.png` | p50 and p95 latency per method per size (log y-axis) |
+| `recall_vs_latency.png` | HNSW ef=16 vs ef=128 recall/latency scatter |

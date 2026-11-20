@@ -20,8 +20,8 @@
   {
     "id": "dbms_04",
     "subject": "DBMS",
-    "keyword": "GIN index",
-    "question": "What type of index does PostgreSQL use to accelerate full-text search over document columns?"
+    "keyword": "index",
+    "question": "What data structure does a database build on a column to avoid scanning every row during a lookup?"
   },
   {
     "id": "dbms_05",
@@ -44,8 +44,8 @@
   {
     "id": "dbms_08",
     "subject": "DBMS",
-    "keyword": "ts_rank",
-    "question": "How does PostgreSQL score and order documents by how well they match a full-text search query?"
+    "keyword": "outer join",
+    "question": "How do you retrieve all rows from one table along with any matching rows from another, filling in nulls where there is no match?"
   },
   {
     "id": "java_01",
@@ -86,8 +86,8 @@
   {
     "id": "comp_01",
     "subject": "Comp",
-    "keyword": "bus arbitration",
-    "question": "How does a computer decide which device gets control of the shared communication lines when several request it simultaneously?"
+    "keyword": "data bus",
+    "question": "Which set of wires carries the actual values between the processor and memory?"
   },
   {
     "id": "comp_02",

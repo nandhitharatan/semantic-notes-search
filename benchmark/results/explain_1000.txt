@@ -1,0 +1,34 @@
+=== LIKE query (size=1000) ===
+
+Limit  (cost=81.51..81.52 rows=1 width=16) (actual time=3.508..3.509 rows=5 loops=1)
+  Buffers: shared hit=69
+  ->  Sort  (cost=81.51..81.52 rows=1 width=16) (actual time=3.506..3.507 rows=5 loops=1)
+        Sort Key: chunk_id
+        Sort Method: quicksort  Memory: 25kB
+        Buffers: shared hit=69
+        ->  Seq Scan on bench_chunks_1k  (cost=0.00..81.50 rows=1 width=16) (actual time=0.195..3.498 rows=9 loops=1)
+              Filter: (chunk_text ~~* '%foreign key%'::text)
+              Rows Removed by Filter: 991
+              Buffers: shared hit=69
+Planning Time: 0.818 ms
+Execution Time: 3.523 ms
+
+=== FTS query (size=1000) ===
+
+Limit  (cost=28.03..28.04 rows=2 width=20) (actual time=0.798..0.799 rows=5 loops=1)
+  Buffers: shared hit=16
+  ->  Sort  (cost=28.03..28.04 rows=2 width=20) (actual time=0.797..0.798 rows=5 loops=1)
+        Sort Key: (ts_rank(to_tsvector('english'::regconfig, chunk_text), '''foreign'' & ''key'''::tsquery)) DESC, chunk_id
+        Sort Method: top-N heapsort  Memory: 25kB
+        Buffers: shared hit=16
+        ->  Bitmap Heap Scan on bench_chunks_1k  (cost=20.01..28.02 rows=2 width=20) (actual time=0.078..0.792 rows=14 loops=1)
+              Recheck Cond: (to_tsvector('english'::regconfig, chunk_text) @@ '''foreign'' & ''key'''::tsquery)
+              Heap Blocks: exact=11
+              Buffers: shared hit=16
+              ->  Bitmap Index Scan on idx_bench_chunks_1k_fts  (cost=0.00..20.01 rows=2 width=0) (actual time=0.011..0.011 rows=14 loops=1)
+                    Index Cond: (to_tsvector('english'::regconfig, chunk_text) @@ '''foreign'' & ''key'''::tsquery)
+                    Buffers: shared hit=5
+Planning:
+  Buffers: shared hit=1
+Planning Time: 0.096 ms
+Execution Time: 0.810 ms

@@ -171,3 +171,14 @@ Output files written to `benchmark/results/`:
 | `environment.txt` | Python, library, OS, CPU, RAM, Postgres and Qdrant versions |
 | `latency_vs_size.png` | p50 and p95 latency per method per size (log y-axis) |
 | `recall_vs_latency.png` | HNSW ef=16 vs ef=128 recall/latency scatter |
+
+> [!IMPORTANT]
+> **`n_results` means different things depending on the method — do not compare them directly.**
+>
+> | Method family | What `n_results` measures |
+> |---|---|
+> | `sql_like`, `sql_fts`, `qdrant_*` | Average rows / points **returned** (≤ 5, capped by LIMIT) |
+> | `sql_like_count`, `sql_fts_count` | Average `COUNT(*)` — **total matching rows**, no LIMIT (can be in the thousands) |
+>
+> The count methods measure full scan cost with the same WHERE clause.
+> Use them to understand how many rows matched, not to compare result-set sizes.

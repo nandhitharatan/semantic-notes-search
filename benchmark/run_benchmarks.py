@@ -5,9 +5,11 @@ Measures latency and recall for five search methods across three dataset sizes:
 
   1. sql_like          – PostgreSQL ILIKE substring scan (sequential, no index)
   2. sql_fts           – PostgreSQL GIN full-text search with ts_rank ordering
-  3. qdrant_hnsw_ef16  – Qdrant HNSW approximate search, query-time hnsw_ef=16
-  4. qdrant_hnsw_ef128 – Qdrant HNSW approximate search, query-time hnsw_ef=128
-  5. qdrant_exact      – Qdrant exhaustive (brute-force) search; ground truth for recall
+  3. sql_like_count    – SELECT COUNT(*) with the same ILIKE WHERE clause, no LIMIT
+  4. sql_fts_count     – SELECT COUNT(*) with the same FTS WHERE clause, no LIMIT
+  5. qdrant_hnsw_ef16  – Qdrant HNSW approximate search, query-time hnsw_ef=16
+  6. qdrant_hnsw_ef128 – Qdrant HNSW approximate search, query-time hnsw_ef=128
+  7. qdrant_exact      – Qdrant exhaustive (brute-force) search; ground truth for recall
 
 WHY HNSW IS APPROXIMATE
 ------------------------
@@ -38,9 +40,10 @@ RECALL DEFINITIONS
 -------------------
   recall_at_5_by_point  – strict: fraction of exact top-5 point UUIDs also
                           returned by the HNSW run, averaged over 20 queries.
-  recall_at_5_by_source – lenient: fraction of exact top-5 SOURCE chunk UUIDs
-                          also returned (after resolving padded copies back to
-                          their real source via the source_chunk_id payload).
+  recall_at_5_by_source – lenient: fraction of unique exact top-5 SOURCE chunk
+                          UUIDs also returned in the HNSW top-5 sources, computed
+                          via set intersection: len(exact_sources & hnsw_sources) / len(exact_sources).
+                          Always bounded in [0.0, 1.0].
   Lenient recall is higher because padded copies are near-duplicates of the same
   text; if HNSW returns a padded copy of the true nearest neighbour it is still
   semantically correct.  Both columns are reported so the difference is visible.
@@ -313,6 +316,63 @@ def run_sql_fts(
     return [str(r[0]) for r in rows]
 
 
+def run_sql_like_count(
+    conn: psycopg2.extensions.connection,
+    table: str,
+    keyword: str,
+    limit: int,  # accepted for interface compatibility; not used
+) -> list[str]:
+    """
+    COUNT(*) variant of sql_like: same ILIKE WHERE clause with no LIMIT.
+
+    Timing this separately reveals the full sequential-scan cost uncapped by
+    LIMIT — useful for understanding how many rows actually match and how much
+    work Postgres does before returning the top-5 to the client.
+
+    Returns a one-element list containing the count as a string, so the
+    _timed_sql harness can treat it like any other SQL method.  n_results for
+    this method reports the average COUNT(*) value across queries, not the
+    number of rows fetched (which is always 1).
+    """
+    _assert_safe_table(table)
+    with conn.cursor() as cur:
+        cur.execute(
+            f"SELECT COUNT(*) FROM {table} WHERE chunk_text ILIKE %s",  # noqa: S608
+            (f"%{keyword}%",),
+        )
+        count = cur.fetchone()[0]
+    return [str(count)]
+
+
+def run_sql_fts_count(
+    conn: psycopg2.extensions.connection,
+    table: str,
+    keyword: str,
+    limit: int,  # accepted for interface compatibility; not used
+) -> list[str]:
+    """
+    COUNT(*) variant of sql_fts: same tsvector @@ tsquery WHERE clause, no LIMIT.
+
+    Shows the full GIN-index lookup cost across all matching rows, not just
+    the top-5.  For keywords with many matches the GIN scan plus heap fetches
+    dominate; for rare keywords the index bitmap is tiny and latency is low.
+
+    Returns a one-element list containing the count as a string.
+    """
+    _assert_safe_table(table)
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT COUNT(*) FROM {table}
+            WHERE to_tsvector('english', chunk_text)
+                  @@ plainto_tsquery('english', %s)
+            """,  # noqa: S608 — table name allowlisted above
+            (keyword,),
+        )
+        count = cur.fetchone()[0]
+    return [str(count)]
+
+
 # ---------------------------------------------------------------------------
 # Qdrant search methods
 # ---------------------------------------------------------------------------
@@ -420,31 +480,45 @@ def compute_recall(
         |{hnsw point ids} ∩ {exact point ids}| / |{exact point ids}|
 
     recall_at_5_by_source (lenient):
-        |{hnsw source chunk ids} ∩ {exact source chunk ids}| / |{exact source chunk ids}|
+        len(exact_sources & hnsw_sources) / len(exact_sources)
 
-    WHY TWO MEASURES: padded copies in the 10k and 50k datasets are
-    near-duplicates of a real chunk (same text, tiny vector noise).  If HNSW
-    returns a padded copy of a true nearest neighbour, the strict score counts
-    it as a miss even though the retrieved text is semantically identical.
-    The lenient score resolves both the HNSW hit and the exact hit back to their
-    source chunk UUID before comparing, so near-duplicate hits are credited.
-    Both columns are kept so the gap reveals how much dataset padding inflates
-    apparent HNSW errors.
+    WHY SETS PREVENT RECALL > 1.0:
+    In padded datasets (10k, 50k), multiple top-5 results can be padded copies
+    sharing the same real source chunk. If exact_sources contains fewer than 5
+    unique source IDs, counting individual element hits without set deduplication
+    would allow hits to exceed len(exact_sources), producing values > 1.0.
+    Using sets:
+        exact_sources = set of source_chunk_id from the exact top-5
+        hnsw_sources  = set of source_chunk_id from the HNSW top-5
+        recall = len(exact_sources & hnsw_sources) / len(exact_sources)
+    ensures both numerator and denominator operate on unique sets, which guarantees
+    recall is mathematically bounded between 0.0 and 1.0.
     """
     exact_set = set(exact_ids)
-    exact_src_set = set(exact_source_ids)
+    hnsw_set = set(hnsw_ids)
 
     if not exact_set:
-        return 1.0, 1.0  # no ground truth — treat as perfect
+        recall_strict = 1.0  # no ground truth — treat as perfect
+    else:
+        recall_strict = len(exact_set & hnsw_set) / len(exact_set)
 
-    hits_strict = sum(1 for pid in hnsw_ids if pid in exact_set)
-    recall_strict = hits_strict / len(exact_set)
+    exact_sources = set(exact_source_ids)
+    hnsw_sources = set(hnsw_source_ids)
 
-    if not exact_src_set:
-        return recall_strict, recall_strict
+    if not exact_sources:
+        recall_lenient = recall_strict
+    else:
+        recall_lenient = len(exact_sources & hnsw_sources) / len(exact_sources)
 
-    hits_lenient = sum(1 for src in hnsw_source_ids if src in exact_src_set)
-    recall_lenient = hits_lenient / len(exact_src_set)
+    # Assertion: recall must always be between 0.0 and 1.0
+    assert 0.0 <= recall_strict <= 1.0, (
+        f"Recall value above 1.0 or below 0.0: strict recall={recall_strict} "
+        f"(hnsw_ids={hnsw_ids}, exact_ids={exact_ids})"
+    )
+    assert 0.0 <= recall_lenient <= 1.0, (
+        f"Recall value above 1.0 or below 0.0: lenient recall={recall_lenient} "
+        f"(exact_sources={exact_sources}, hnsw_sources={hnsw_sources})"
+    )
 
     return recall_strict, recall_lenient
 
@@ -606,6 +680,78 @@ def _stats(latencies_ms: list[float]) -> dict[str, float]:
 
 
 # ---------------------------------------------------------------------------
+# Global warm-up
+# ---------------------------------------------------------------------------
+
+def global_warmup(
+    sizes: list[int],
+    queries: list[dict[str, str]],
+    vectors: list[list[float]],
+) -> None:
+    """
+    Run each method once on the first 3 queries for every size before any timed section.
+
+    DBMS concept: cold caches (empty PostgreSQL shared buffers, cold OS page cache,
+    and unmapped Qdrant vector segments) unfairly penalise whichever dataset size
+    is tested first. Running an untimed pass across all sizes primes buffer pools
+    and memory-mapped indexes so the first size does not suffer from cold-cache latency.
+    """
+    warmup_queries = queries[:3]
+    print(f"\n{'='*64}")
+    print(
+        f"  Global warm-up: running each method once on first {len(warmup_queries)} "
+        f"query/queries for every size (untimed)…"
+    )
+    print(f"{'='*64}")
+
+    for size in sizes:
+        cfg = SIZE_CONFIG[size]
+        table = cfg["table"]
+        collection = cfg["collection"]
+        _assert_safe_table(table)
+        _assert_safe_collection(collection)
+
+        try:
+            pg_conn = _pg_connect()
+        except Exception as exc:
+            print(f"  [Global warm-up {size:,}] PostgreSQL connection error: {exc}")
+            continue
+
+        try:
+            qd_client = _qdrant_client()
+        except Exception as exc:
+            print(f"  [Global warm-up {size:,}] Qdrant connection error: {exc}")
+            pg_conn.close()
+            continue
+
+        try:
+            for qi, query in enumerate(warmup_queries):
+                keyword = query["keyword"]
+                vector = vectors[qi]
+
+                # SQL methods (discard results and timings)
+                try:
+                    run_sql_like(pg_conn, table, keyword, LIMIT)
+                    run_sql_fts(pg_conn, table, keyword, LIMIT)
+                    run_sql_like_count(pg_conn, table, keyword, LIMIT)
+                    run_sql_fts_count(pg_conn, table, keyword, LIMIT)
+                except Exception:
+                    pass
+
+                # Qdrant methods (discard results and timings)
+                try:
+                    run_qdrant(qd_client, collection, vector, LIMIT, hnsw_ef=None, exact=True)
+                    run_qdrant(qd_client, collection, vector, LIMIT, hnsw_ef=16, exact=False)
+                    run_qdrant(qd_client, collection, vector, LIMIT, hnsw_ef=128, exact=False)
+                except Exception:
+                    pass
+        finally:
+            pg_conn.close()
+
+    print("  Global warm-up complete. Starting timed sections.\n")
+
+
+# ---------------------------------------------------------------------------
 # Main benchmark loop
 # ---------------------------------------------------------------------------
 
@@ -654,10 +800,16 @@ def run_size(
     all_latencies: dict[str, list[float]] = {
         "sql_like":           [],
         "sql_fts":            [],
+        "sql_like_count":     [],
+        "sql_fts_count":      [],
         "qdrant_hnsw_ef16":   [],
         "qdrant_hnsw_ef128":  [],
         "qdrant_exact":       [],
     }
+    # n_results accumulator: method -> list of per-query result counts.
+    # For sql_like/sql_fts/qdrant: number of rows/points returned (up to LIMIT).
+    # For sql_like_count/sql_fts_count: the COUNT(*) value itself (can exceed LIMIT).
+    n_results_accum: dict[str, list[float]] = {m: [] for m in all_latencies}
     # recall values per query for the two HNSW variants
     recall_ef16_strict:   list[float] = []
     recall_ef16_lenient:  list[float] = []
@@ -675,10 +827,11 @@ def run_size(
         # ---- sql_like ----
         if not method_failed["sql_like"]:
             try:
-                _, lats = _timed_sql(
+                result, lats = _timed_sql(
                     pg_conn, table, run_sql_like, keyword, LIMIT, n_warmup, n_runs
                 )
                 all_latencies["sql_like"].extend(lats)
+                n_results_accum["sql_like"].append(len(result))
             except Exception as exc:
                 print(f"    sql_like ERROR: {exc}")
                 method_failed["sql_like"] = True
@@ -686,13 +839,39 @@ def run_size(
         # ---- sql_fts ----
         if not method_failed["sql_fts"]:
             try:
-                _, lats = _timed_sql(
+                result, lats = _timed_sql(
                     pg_conn, table, run_sql_fts, keyword, LIMIT, n_warmup, n_runs
                 )
                 all_latencies["sql_fts"].extend(lats)
+                n_results_accum["sql_fts"].append(len(result))
             except Exception as exc:
                 print(f"    sql_fts ERROR: {exc}")
                 method_failed["sql_fts"] = True
+
+        # ---- sql_like_count ----
+        if not method_failed["sql_like_count"]:
+            try:
+                result, lats = _timed_sql(
+                    pg_conn, table, run_sql_like_count, keyword, LIMIT, n_warmup, n_runs
+                )
+                all_latencies["sql_like_count"].extend(lats)
+                # result is ["<integer>"] — store the COUNT(*) value
+                n_results_accum["sql_like_count"].append(int(result[0]) if result else 0)
+            except Exception as exc:
+                print(f"    sql_like_count ERROR: {exc}")
+                method_failed["sql_like_count"] = True
+
+        # ---- sql_fts_count ----
+        if not method_failed["sql_fts_count"]:
+            try:
+                result, lats = _timed_sql(
+                    pg_conn, table, run_sql_fts_count, keyword, LIMIT, n_warmup, n_runs
+                )
+                all_latencies["sql_fts_count"].extend(lats)
+                n_results_accum["sql_fts_count"].append(int(result[0]) if result else 0)
+            except Exception as exc:
+                print(f"    sql_fts_count ERROR: {exc}")
+                method_failed["sql_fts_count"] = True
 
         # ---- qdrant_exact (ground truth — run BEFORE HNSW so we have recall targets) ----
         exact_ids: list[str] = []
@@ -706,6 +885,7 @@ def run_size(
                 )
                 all_latencies["qdrant_exact"].extend(lats)
                 exact_ids, exact_source_ids = _point_ids_and_sources(exact_points)
+                n_results_accum["qdrant_exact"].append(len(exact_points))
             except Exception as exc:
                 print(f"    qdrant_exact ERROR: {exc}")
                 method_failed["qdrant_exact"] = True
@@ -723,6 +903,7 @@ def run_size(
                 rs, rl = compute_recall(ef16_ids, exact_ids, ef16_src_ids, exact_source_ids)
                 recall_ef16_strict.append(rs)
                 recall_ef16_lenient.append(rl)
+                n_results_accum["qdrant_hnsw_ef16"].append(len(ef16_points))
             except Exception as exc:
                 print(f"    qdrant_hnsw_ef16 ERROR: {exc}")
                 method_failed["qdrant_hnsw_ef16"] = True
@@ -740,6 +921,7 @@ def run_size(
                 rs, rl = compute_recall(ef128_ids, exact_ids, ef128_src_ids, exact_source_ids)
                 recall_ef128_strict.append(rs)
                 recall_ef128_lenient.append(rl)
+                n_results_accum["qdrant_hnsw_ef128"].append(len(ef128_points))
             except Exception as exc:
                 print(f"    qdrant_hnsw_ef128 ERROR: {exc}")
                 method_failed["qdrant_hnsw_ef128"] = True
@@ -759,7 +941,15 @@ def run_size(
     result_rows: list[dict[str, Any]] = []
 
     def _recall_avg(values: list[float]) -> float | str:
-        return round(float(np.mean(values)), 4) if values else "failed"
+        if not values:
+            return "failed"
+        avg = round(float(np.mean(values)), 4)
+        assert 0.0 <= avg <= 1.0, f"Average recall value above 1.0: {avg}"
+        return avg
+
+    def _n_results_avg(method: str) -> float | str:
+        vals = n_results_accum.get(method, [])
+        return round(float(np.mean(vals)), 2) if vals else "failed"
 
     for method, lats in all_latencies.items():
         if method_failed[method]:
@@ -771,6 +961,7 @@ def run_size(
                 "mean_ms":                "failed",
                 "recall_at_5_by_point":   "N/A",
                 "recall_at_5_by_source":  "N/A",
+                "n_results":              "failed",
                 "n_queries":              n_queries,
                 "n_runs":                 n_runs,
             }
@@ -796,6 +987,7 @@ def run_size(
                 **stats,
                 "recall_at_5_by_point":  r_point,
                 "recall_at_5_by_source": r_source,
+                "n_results":             _n_results_avg(method),
                 "n_queries":             n_queries,
                 "n_runs":                n_runs,
             }
@@ -808,7 +1000,10 @@ def run_size(
 
 def _all_failed_rows(size: int, n_runs: int, n_queries: int) -> list[dict[str, Any]]:
     """Return one 'failed' row per method when the whole size is unreachable."""
-    methods = ["sql_like", "sql_fts", "qdrant_hnsw_ef16", "qdrant_hnsw_ef128", "qdrant_exact"]
+    methods = [
+        "sql_like", "sql_fts", "sql_like_count", "sql_fts_count",
+        "qdrant_hnsw_ef16", "qdrant_hnsw_ef128", "qdrant_exact",
+    ]
     return [
         {
             "size":                  size,
@@ -818,6 +1013,7 @@ def _all_failed_rows(size: int, n_runs: int, n_queries: int) -> list[dict[str, A
             "mean_ms":               "failed",
             "recall_at_5_by_point":  "N/A",
             "recall_at_5_by_source": "N/A",
+            "n_results":             "failed",
             "n_queries":             n_queries,
             "n_runs":                n_runs,
         }
@@ -831,13 +1027,15 @@ def _print_row(row: dict[str, Any]) -> None:
     p95 = row["p95_ms"]
     rp  = row["recall_at_5_by_point"]
     rs  = row["recall_at_5_by_source"]
+    nr  = row["n_results"]
     p50_str = f"{p50:>8.2f}" if isinstance(p50, float) else f"{'failed':>8}"
     p95_str = f"{p95:>8.2f}" if isinstance(p95, float) else f"{'failed':>8}"
     rp_str  = f"{rp:.4f}" if isinstance(rp, float) else str(rp)
     rs_str  = f"{rs:.4f}" if isinstance(rs, float) else str(rs)
+    nr_str  = f"{nr:.1f}" if isinstance(nr, float) else str(nr)
     print(
         f"    {row['method']:<22} p50={p50_str} ms  p95={p95_str} ms"
-        f"  recall_pt={rp_str}  recall_src={rs_str}"
+        f"  recall_pt={rp_str}  recall_src={rs_str}  n_results={nr_str}"
     )
 
 
@@ -845,11 +1043,30 @@ def _print_row(row: dict[str, Any]) -> None:
 # CSV / file writers
 # ---------------------------------------------------------------------------
 
+# NOTE ON n_results INTERPRETATION
+# ----------------------------------
+# n_results means different things depending on the method and must NOT be
+# compared directly across method families:
+#
+#   sql_like, sql_fts, qdrant_*
+#       Average number of rows / points RETURNED to the caller (≤ LIMIT = 5).
+#       A value < 5 means the query genuinely matched fewer documents.
+#
+#   sql_like_count, sql_fts_count
+#       Average COUNT(*) value across queries — the TOTAL number of rows that
+#       satisfy the WHERE clause in the table, with no LIMIT applied.
+#       This can be in the thousands at 50 k and is intentionally uncapped:
+#       the goal is to show the full sequential-scan or GIN-bitmap cost, not
+#       to cap the work at 5 rows.
+#
+# When reading results.csv, treat n_results for the count methods as a
+# "matching-row count" diagnostic, not as a comparable result-set size.
+
 RESULTS_FIELDNAMES = [
     "size", "method",
     "p50_ms", "p95_ms", "mean_ms",
     "recall_at_5_by_point", "recall_at_5_by_source",
-    "n_queries", "n_runs",
+    "n_results", "n_queries", "n_runs",
 ]
 
 
@@ -860,6 +1077,16 @@ def save_results_csv(all_rows: list[dict[str, Any]]) -> None:
     DBMS concept: idempotent output is important; a simple overwrite avoids the
     need for a 'delete where run_id = X' query that OLAP tools sometimes require.
     """
+    # Fail-fast assertion: ensure no recall value exceeds 1.0
+    for row in all_rows:
+        for k in ("recall_at_5_by_point", "recall_at_5_by_source"):
+            val = row.get(k)
+            if isinstance(val, (int, float)):
+                assert 0.0 <= val <= 1.0, (
+                    f"Recall value above 1.0 found for method '{row.get('method')}' "
+                    f"at size {row.get('size')} ({k}={val})"
+                )
+
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     path = RESULTS_DIR / "results.csv"
     with open(path, "w", newline="", encoding="utf-8") as fh:
@@ -934,7 +1161,8 @@ def save_graphs(all_rows: list[dict[str, Any]]) -> None:
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     # Pivot data: method -> size -> stats
-    methods = ["sql_like", "sql_fts", "qdrant_hnsw_ef16", "qdrant_hnsw_ef128", "qdrant_exact"]
+    methods = ["sql_like", "sql_fts", "sql_like_count", "sql_fts_count",
+               "qdrant_hnsw_ef16", "qdrant_hnsw_ef128", "qdrant_exact"]
     sizes = sorted(SIZE_CONFIG.keys())
 
     def _safe_float(val: Any) -> float | None:
@@ -953,6 +1181,8 @@ def save_graphs(all_rows: list[dict[str, Any]]) -> None:
     colors = {
         "sql_like":           "#e74c3c",
         "sql_fts":            "#e67e22",
+        "sql_like_count":     "#c0392b",
+        "sql_fts_count":      "#d35400",
         "qdrant_hnsw_ef16":   "#2980b9",
         "qdrant_hnsw_ef128":  "#27ae60",
         "qdrant_exact":       "#8e44ad",
@@ -1034,7 +1264,7 @@ def print_summary(all_rows: list[dict[str, Any]]) -> None:
     """Print a human-readable summary table at the end of the run."""
     header = (
         f"\n{'Size':>7}  {'Method':<22}  {'p50 ms':>8}  {'p95 ms':>8}"
-        f"  {'mean ms':>8}  {'R@5 pt':>7}  {'R@5 src':>8}"
+        f"  {'mean ms':>8}  {'R@5 pt':>7}  {'R@5 src':>8}  {'n_results':>9}"
     )
     print(header)
     print("-" * len(header))
@@ -1044,14 +1274,16 @@ def print_summary(all_rows: list[dict[str, Any]]) -> None:
         mn  = row["mean_ms"]
         rp  = row["recall_at_5_by_point"]
         rs  = row["recall_at_5_by_source"]
+        nr  = row["n_results"]
         p50_s = f"{p50:>8.2f}" if isinstance(p50, float) else f"{'failed':>8}"
         p95_s = f"{p95:>8.2f}" if isinstance(p95, float) else f"{'failed':>8}"
         mn_s  = f"{mn:>8.2f}"  if isinstance(mn, float)  else f"{'failed':>8}"
         rp_s  = f"{float(rp):>7.4f}" if isinstance(rp, float) else f"{'N/A':>7}"
         rs_s  = f"{float(rs):>8.4f}" if isinstance(rs, float) else f"{'N/A':>8}"
+        nr_s  = f"{float(nr):>9.1f}" if isinstance(nr, float) else f"{'N/A':>9}"
         print(
             f"{row['size']:>7,}  {row['method']:<22}  {p50_s}  {p95_s}"
-            f"  {mn_s}  {rp_s}  {rs_s}"
+            f"  {mn_s}  {rp_s}  {rs_s}  {nr_s}"
         )
 
 
@@ -1103,6 +1335,9 @@ def main() -> None:
 
     # Embed all questions once — outside every timed section.
     vectors, embedding_times = embed_queries(queries)
+
+    # Global warm-up across every size on the first 3 queries (untimed).
+    global_warmup(sizes, queries, vectors)
 
     all_rows: list[dict[str, Any]] = []
 

@@ -1,0 +1,10 @@
+Date:            2026-11-20T22:02:44
+Python:          3.14.4 (tags/v3.14.4:23116f9, Apr  7 2026, 14:10:54) [MSC v.1944 64 bit (AMD64)]
+OS:              Windows-11-10.0.26200-SP0
+CPU name:        Intel64 Family 6 Model 154 Stepping 4, GenuineIntel
+CPU logical:     12
+RAM (GB):        psutil not installed
+qdrant-client:   version unknown
+sentence-transformers: 6.3.0
+PostgreSQL:      PostgreSQL 15.20 (Debian 15.20-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+Qdrant version:  (see Qdrant dashboard)

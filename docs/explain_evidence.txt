@@ -1,0 +1,32 @@
+Note: The plain LIKE plan stops early because of LIMIT 5; use the count query plan for the full-scan claim.
+
+=== LIKE query (size=50000) ===
+
+Limit  (cost=0.29..154.43 rows=5 width=16) (actual time=0.381..1.335 rows=5 loops=1)
+  Buffers: shared hit=421
+  ->  Index Scan using bench_chunks_50k_pkey on bench_chunks_50k  (cost=0.29..15568.07 rows=505 width=16) (actual time=0.380..1.333 rows=5 loops=1)
+        Filter: (chunk_text ~~* '%foreign key%'::text)
+        Rows Removed by Filter: 424
+        Buffers: shared hit=421
+Planning Time: 0.401 ms
+Execution Time: 1.344 ms
+
+=== FTS query (size=50000) ===
+
+Limit  (cost=427.36..427.37 rows=5 width=20) (actual time=41.042..41.044 rows=5 loops=1)
+  Buffers: shared hit=722
+  ->  Sort  (cost=427.36..427.61 rows=100 width=20) (actual time=41.041..41.042 rows=5 loops=1)
+        Sort Key: (ts_rank(to_tsvector('english'::regconfig, chunk_text), '''foreign'' & ''key'''::tsquery)) DESC, chunk_id
+        Sort Method: top-N heapsort  Memory: 25kB
+        Buffers: shared hit=722
+        ->  Bitmap Heap Scan on bench_chunks_50k  (cost=28.77..425.70 rows=100 width=20) (actual time=0.250..40.957 rows=825 loops=1)
+              Recheck Cond: (to_tsvector('english'::regconfig, chunk_text) @@ '''foreign'' & ''key'''::tsquery)
+              Heap Blocks: exact=711
+              Buffers: shared hit=722
+              ->  Bitmap Index Scan on idx_bench_chunks_50k_fts  (cost=0.00..28.75 rows=100 width=0) (actual time=0.125..0.126 rows=825 loops=1)
+                    Index Cond: (to_tsvector('english'::regconfig, chunk_text) @@ '''foreign'' & ''key'''::tsquery)
+                    Buffers: shared hit=11
+Planning:
+  Buffers: shared hit=1
+Planning Time: 0.110 ms
+Execution Time: 41.058 ms

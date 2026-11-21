@@ -1,0 +1,202 @@
+[
+  {
+    "id": "dbms_01",
+    "subject": "DBMS",
+    "query_type": "keyword",
+    "query": "foreign key",
+    "keyword": "foreign key",
+    "question": "How does one table reference a row in another table to enforce referential integrity?",
+    "expected_file": "",
+    "expected_page": ""
+  },
+  {
+    "id": "dbms_02",
+    "subject": "DBMS",
+    "query_type": "keyword",
+    "query": "primary key",
+    "keyword": "primary key",
+    "question": "What uniquely identifies every record in a relation and cannot be null?",
+    "expected_file": "",
+    "expected_page": ""
+  },
+  {
+    "id": "dbms_03",
+    "subject": "DBMS",
+    "query_type": "keyword",
+    "query": "inner join",
+    "keyword": "inner join",
+    "question": "How do you combine rows from two tables keeping only those that have matching values on both sides?",
+    "expected_file": "",
+    "expected_page": ""
+  },
+  {
+    "id": "dbms_04",
+    "subject": "DBMS",
+    "query_type": "keyword",
+    "query": "index",
+    "keyword": "index",
+    "question": "What data structure does a database build on a column to avoid scanning every row during a lookup?",
+    "expected_file": "",
+    "expected_page": ""
+  },
+  {
+    "id": "dbms_05",
+    "subject": "DBMS",
+    "query_type": "paraphrase",
+    "query": "What mechanism lets a stored procedure iterate over a query result one row at a time?",
+    "keyword": "cursor",
+    "question": "What mechanism lets a stored procedure iterate over a query result one row at a time?",
+    "expected_file": "",
+    "expected_page": ""
+  },
+  {
+    "id": "dbms_06",
+    "subject": "DBMS",
+    "query_type": "paraphrase",
+    "query": "How do you encapsulate a reusable block of SQL logic that can be called by name from an application?",
+    "keyword": "stored procedure",
+    "question": "How do you encapsulate a reusable block of SQL logic that can be called by name from an application?",
+    "expected_file": "",
+    "expected_page": ""
+  },
+  {
+    "id": "dbms_07",
+    "subject": "DBMS",
+    "query_type": "paraphrase",
+    "query": "What rules are enforced at the schema level to prevent invalid or inconsistent data from being written?",
+    "keyword": "integrity constraint",
+    "question": "What rules are enforced at the schema level to prevent invalid or inconsistent data from being written?",
+    "expected_file": "",
+    "expected_page": ""
+  },
+  {
+    "id": "dbms_08",
+    "subject": "DBMS",
+    "query_type": "paraphrase",
+    "query": "How do you retrieve all rows from one table along with any matching rows from another, filling in nulls where there is no match?",
+    "keyword": "outer join",
+    "question": "How do you retrieve all rows from one table along with any matching rows from another, filling in nulls where there is no match?",
+    "expected_file": "INDEX, JOINS.pdf",
+    "expected_page": 5
+  },
+  {
+    "id": "java_01",
+    "subject": "Java",
+    "query_type": "keyword",
+    "query": "inheritance",
+    "keyword": "inheritance",
+    "question": "How does a child class acquire the fields and methods of its parent without rewriting them?",
+    "expected_file": "",
+    "expected_page": ""
+  },
+  {
+    "id": "java_02",
+    "subject": "Java",
+    "query_type": "keyword",
+    "query": "abstract class",
+    "keyword": "abstract class",
+    "question": "What kind of class cannot be directly instantiated and may declare methods that subclasses must implement?",
+    "expected_file": "",
+    "expected_page": ""
+  },
+  {
+    "id": "java_03",
+    "subject": "Java",
+    "query_type": "keyword",
+    "query": "interface",
+    "keyword": "interface",
+    "question": "How do you define a contract in Java that multiple unrelated classes can agree to fulfil?",
+    "expected_file": "",
+    "expected_page": ""
+  },
+  {
+    "id": "java_04",
+    "subject": "Java",
+    "query_type": "paraphrase",
+    "query": "What language construct lets a program recover gracefully when an unexpected runtime error occurs?",
+    "keyword": "exception handling",
+    "question": "What language construct lets a program recover gracefully when an unexpected runtime error occurs?",
+    "expected_file": "OOPS Using JAVA LAB MANUAL 2026-2027.pdf",
+    "expected_page": 28
+  },
+  {
+    "id": "java_05",
+    "subject": "Java",
+    "query_type": "paraphrase",
+    "query": "Which resizable collection in Java stores elements in order and allows random access by position?",
+    "keyword": "ArrayList",
+    "question": "Which resizable collection in Java stores elements in order and allows random access by position?",
+    "expected_file": "",
+    "expected_page": ""
+  },
+  {
+    "id": "java_06",
+    "subject": "Java",
+    "query_type": "paraphrase",
+    "query": "How can a class provide several different ways to initialise an object depending on which arguments are supplied?",
+    "keyword": "constructor overloading",
+    "question": "How can a class provide several different ways to initialise an object depending on which arguments are supplied?",
+    "expected_file": "STLW_JAVA_UNIT_2.pdf",
+    "expected_page": 16
+  },
+  {
+    "id": "comp_01",
+    "subject": "Comp",
+    "query_type": "keyword",
+    "query": "data bus",
+    "keyword": "data bus",
+    "question": "Which set of wires carries the actual values between the processor and memory?",
+    "expected_file": "",
+    "expected_page": ""
+  },
+  {
+    "id": "comp_02",
+    "subject": "Comp",
+    "query_type": "keyword",
+    "query": "instruction cycle",
+    "keyword": "instruction cycle",
+    "question": "What are the repeating steps a processor performs from the moment it fetches an operation until it prepares for the next?",
+    "expected_file": "",
+    "expected_page": ""
+  },
+  {
+    "id": "comp_03",
+    "subject": "Comp",
+    "query_type": "keyword",
+    "query": "cache memory",
+    "keyword": "cache memory",
+    "question": "What small, fast storage layer sits between the processor and main memory to reduce average access time?",
+    "expected_file": "",
+    "expected_page": ""
+  },
+  {
+    "id": "comp_04",
+    "subject": "Comp",
+    "query_type": "paraphrase",
+    "query": "Which set of lines carries the location in memory that the CPU wants to read from or write to?",
+    "keyword": "address bus",
+    "question": "Which set of lines carries the location in memory that the CPU wants to read from or write to?",
+    "expected_file": "co answers updated (1).pdf",
+    "expected_page": 13
+  },
+  {
+    "id": "comp_05",
+    "subject": "Comp",
+    "query_type": "paraphrase",
+    "query": "What are the tiny, extremely fast storage locations built directly into the processor for holding operands and results?",
+    "keyword": "register",
+    "question": "What are the tiny, extremely fast storage locations built directly into the processor for holding operands and results?",
+    "expected_file": "",
+    "expected_page": ""
+  },
+  {
+    "id": "comp_06",
+    "subject": "Comp",
+    "query_type": "paraphrase",
+    "query": "How does a peripheral device signal the CPU to pause its current work and handle an urgent event?",
+    "keyword": "interrupt",
+    "question": "How does a peripheral device signal the CPU to pause its current work and handle an urgent event?",
+    "expected_file": "co answers updated (1).pdf",
+    "expected_page": 10
+  }
+]

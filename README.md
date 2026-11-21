@@ -182,3 +182,25 @@ Output files written to `benchmark/results/`:
 >
 > The count methods measure full scan cost with the same WHERE clause.
 > Use them to understand how many rows matched, not to compare result-set sizes.
+
+## Step 7: evaluate headline questions
+
+Evaluate 20 mixed queries (10 keyword-style and 10 natural-language paraphrases) across
+SQL LIKE, SQL Full-Text, Vector Search (unfiltered), and Vector Search (with subject filter):
+
+```powershell
+py benchmark/evaluate_questions.py
+```
+
+- Ground truth is configured in `benchmark/questions.json` (`expected_file` and `expected_page`).
+- A "hit" occurs when the expected file and page appear within the top 5 results.
+- Missing ground-truth entries print a warning and are excluded from hit-rate calculations.
+- Detailed results are saved to `benchmark/results/questions_results.csv`.
+
+## Step 8: interactive web app (Streamlit)
+
+Launch the interactive comparison UI to search notes across SQL LIKE, SQL Full-Text, and Qdrant Vector search side-by-side, or upload new PDF notes:
+
+```powershell
+streamlit run app.py
+```

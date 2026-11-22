@@ -29,7 +29,7 @@ No LLM is used. The focus is database design, indexing, consistency and benchmar
 | Infrastructure      | Docker Compose (PostgreSQL and Qdrant containers), python-dotenv for configuration |
 ## Architecture (polyglot persistence)
 
-![Architecture](docs/architecture.png)
+![Architecture](docs/Architecture.png)
 
 - **PostgreSQL** stores users, documents, chunks and ingestion jobs, plus a B-tree index on `documents(subject)` and a GIN index for full-text search.
 - **Qdrant** stores one vector per chunk. Cosine distance, HNSW `m=16`, `ef_construct=100`. Payload: `doc_id`, `subject`, `chunk_index`, `text`.

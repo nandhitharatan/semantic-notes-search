@@ -1,206 +1,200 @@
 # Semantic Notes Search Engine
 
-Students upload PDF notes and search their contents by meaning. PostgreSQL stores
-the durable document and chunk records, while Qdrant stores embeddings for semantic
-search.
+**Vector Database vs Relational Database: when to use which**
 
-## Local setup
+A DBMS case study. Students upload PDF notes and search them by meaning. The same query is run on three searches side by side:
 
-1. Start the database services:
+| Search | Database feature | Finds |
+|---|---|---|
+| SQL `LIKE` | full table scan | exact text only |
+| SQL full-text search | GIN index on `tsvector` | words and word forms |
+| Vector search | Qdrant HNSW index, cosine distance | meaning |
 
-   ```powershell
-   docker compose up -d
-   ```
+No LLM is used. The focus is database design, indexing, consistency and benchmarking.
 
-2. Install the fixed project dependencies:
+![App screenshot](docs/screenshots/app_three_columns.png)
 
-   ```powershell
-   py -m pip install -r requirements.txt
-   ```
+---
 
-3. On a new database, apply the base schema and then the page-number migration:
+## Architecture (polyglot persistence)
 
-   ```powershell
-   Get-Content database/postgres_schema.sql -Raw | docker compose exec -T postgres psql -U admin -d notes_db
-   Get-Content database/001_add_chunks_page_no.sql -Raw | docker compose exec -T postgres psql -U admin -d notes_db
-   ```
+```
+PDF -> pypdf -> 500-character chunks -> PostgreSQL (users, documents, chunks, ingestion_jobs)
+                                     -> embeddings (all-MiniLM-L6-v2, 384 dims)
+                                     -> Qdrant (collection notes_chunks)
 
-4. Create the Qdrant collection:
-
-   ```powershell
-   py database/qdrant_setup.py
-   ```
-
-`POSTGRES_URL`, `QDRANT_URL`, and `QDRANT_API_KEY` are read from the local `.env`
-file. Do not commit secrets.
-
-## Step 1: ingest a PDF
-
-Run `ingest.py` with a PDF path, subject, and existing PostgreSQL user ID:
-
-```powershell
-py src/ingest.py "C:\path\to\your-notes.pdf" "DBMS" 1
+Question -> LIKE / full-text  -> PostgreSQL
+         -> embedding -> vector search -> Qdrant
 ```
 
-The function commits the document, chunks, page numbers, and a `PENDING` ingestion
-job to PostgreSQL before sending vectors to Qdrant. A Qdrant failure therefore leaves
-the PostgreSQL data and `PENDING` job available for the retry worker added in Step 4.
-On success, the script prints the number of chunks, PostgreSQL job status, and number
-of Qdrant points for the new document.
+- **PostgreSQL** stores users, documents, chunks and ingestion jobs, plus a B-tree index on `documents(subject)` and a GIN index for full-text search.
+- **Qdrant** stores one vector per chunk. Cosine distance, HNSW `m=16`, `ef_construct=100`. Payload: `doc_id`, `subject`, `chunk_index`, `text`.
+- **Link between them:** the Qdrant point ID is the same UUID as `chunks.chunk_id`.
 
-## Ingest a subject folder
+### Consistency between the two databases
+One transaction cannot cover both databases, so ingestion works like this:
 
-Place PDFs in `data\Java`, `data\DBMS`, or `data\Comp` (file names may contain
-spaces), then ingest all of them with the default PostgreSQL user ID `1`:
+1. Save the document, chunks and a `PENDING` row in `ingestion_jobs` (Postgres).
+2. Upsert the vectors into Qdrant.
+3. Mark the job `COMPLETED`.
 
-```powershell
-py src/ingest_folder.py data
+If step 2 fails, the job stays `PENDING` and `database/retry_worker.py` re-sends it. The upsert is idempotent because the point ID equals `chunk_id`, so a retry cannot create duplicates. This is eventual consistency with a simple outbox-style retry. A background worker is not built; the retry is run manually.
+
+---
+
+## Project structure
+
+```
+database/    schema, Qdrant setup, retry worker, failure-recovery test
+src/         ingest.py, search_sql.py, search_vector.py
+benchmark/   dataset builder, benchmark runner, query check, questions evaluator, results/
+docs/        EXPLAIN evidence, screenshots
+app.py       Streamlit demo
+docker-compose.yml
 ```
 
-To use another user, pass `--user-id`, for example:
+---
 
+## Setup
+
+Requirements: Docker Desktop, Python 3.10+.
 ```powershell
-py src/ingest_folder.py data --user-id 2
-```
+# 1. Start PostgreSQL and Qdrant
+docker compose up -d
 
-Files that already have the same file name and subject in PostgreSQL are printed as
-`skipped`; this prevents duplicate relational rows and Qdrant points on later runs.
+# 2. Create your environment file and fill in the values
+cp .env.example .env        # Windows: copy .env.example .env
 
-## Step 2: PostgreSQL searches
+# 3. Install dependencies
+pip install -r requirements.txt
 
-Run both SQL search methods from the project root:
-
-```powershell
-py -c "from src.search_sql import search_like, search_fts; print(search_like('database', 5)); print(search_fts('database', 5))"
-```
-
-`search_like` is the substring baseline. `search_fts` uses PostgreSQL's English
-full-text query and `ts_rank`, with the existing GIN index supporting the tsvector
-predicate.
-
-## Step 3: Qdrant vector search
-
-Run semantic search with the default HNSW settings:
-
-```powershell
-py -c "from src.search_vector import search_vector; print(search_vector('database temperature', 5))"
-```
-
-Pass `subject='DBMS'` to filter by payload, `exact=True` for exact search, or an
-`hnsw_ef` value to control query-time HNSW exploration.
-
-## Step 4: retry worker and recovery proof
-
-Apply the retry-count migration once:
-
-```powershell
+# 4. Create tables and indexes (PowerShell, run once on a new database)
+Get-Content database/postgres_schema.sql -Raw | docker compose exec -T postgres psql -U admin -d notes_db
+Get-Content database/001_add_chunks_page_no.sql -Raw | docker compose exec -T postgres psql -U admin -d notes_db
 Get-Content database/002_add_ingestion_retry_count.sql -Raw | docker compose exec -T postgres psql -U admin -d notes_db
+ 
+# 5. Create the Qdrant collection
+python database/qdrant_setup.py
 ```
 
-Run the worker to re-embed every retryable `PENDING` job and idempotently upsert its
-stable chunk UUIDs into Qdrant. It prints embedding and Qdrant-upsert times separately:
+Put your own PDFs under `data/<subject>/`, for example `data/dbms/`.
+The Silberschatz textbook *Database System Concepts*, used in the experiments, is **not included** in this repository for copyright reasons.
 
-```powershell
-py database/retry_worker.py
-```
+### Environment variables (`.env`)
+See `.env.example`. Never commit `.env`.
 
-To prove failure and recovery, provide a small PDF, manually stop Qdrant when prompted,
-then start it again when prompted. The script verifies `PENDING` before recovery and
-`COMPLETED` after the worker runs:
-
-```powershell
-py database/test_failure_recovery.py "data\DBMS\INDEX, JOINS.pdf"
-```
-
-## Step 5: generate benchmark datasets
-
-Build the three benchmark datasets (1 k, 10 k, 50 k chunks) in dedicated
-Postgres tables and Qdrant collections.  Vectors are reused from
-`notes_chunks`; no re-embedding is needed.
-
-```powershell
-py benchmark/generate_data.py
-```
-
-To build a subset of sizes:
-
-```powershell
-py benchmark/generate_data.py --sizes 1000 10000
-```
-
-To drop and rebuild an existing dataset (each drop requires typing `YES`):
-
-```powershell
-py benchmark/generate_data.py --force
-```
-
-Timing metrics are saved to `benchmark/results/dataset_build.csv`.
-
-## Step 6: run benchmarks
-
-Measure latency and recall for five search methods (sql_like, sql_fts,
-qdrant_hnsw_ef16, qdrant_hnsw_ef128, qdrant_exact) across all three dataset
-sizes.  The model is loaded once and all embeddings are pre-computed before
-any timed section.
-
-Quick sanity check (3 queries, 2 runs — finishes in ~1 minute):
-
-```powershell
-py benchmark/run_benchmarks.py --quick
-```
-
-Full benchmark run (all 3 sizes, 20 queries, 10 recorded runs each):
-
-```powershell
-py benchmark/run_benchmarks.py
-```
-
-Benchmark a subset of sizes:
-
-```powershell
-py benchmark/run_benchmarks.py --sizes 1000 10000
-```
-
-Output files written to `benchmark/results/`:
-
-| File | Contents |
+| Variable | Meaning |
 |---|---|
-| `results.csv` | p50, p95, mean latency and recall@5 per (size, method) — overwritten each run |
-| `embedding_times.csv` | embedding time per query in ms |
-| `explain_<size>.txt` | EXPLAIN (ANALYZE, BUFFERS) for one LIKE and one FTS query per size |
-| `environment.txt` | Python, library, OS, CPU, RAM, Postgres and Qdrant versions |
-| `latency_vs_size.png` | p50 and p95 latency per method per size (log y-axis) |
-| `recall_vs_latency.png` | HNSW ef=16 vs ef=128 recall/latency scatter |
+| `POSTGRES_URL` | PostgreSQL connection string |
+| `QDRANT_URL` | Qdrant URL, for example `http://localhost:6333` |
+| `QDRANT_API_KEY` | Optional, for Qdrant Cloud |
 
-> [!IMPORTANT]
-> **`n_results` means different things depending on the method — do not compare them directly.**
->
-> | Method family | What `n_results` measures |
-> |---|---|
-> | `sql_like`, `sql_fts`, `qdrant_*` | Average rows / points **returned** (≤ 5, capped by LIMIT) |
-> | `sql_like_count`, `sql_fts_count` | Average `COUNT(*)` — **total matching rows**, no LIMIT (can be in the thousands) |
->
-> The count methods measure full scan cost with the same WHERE clause.
-> Use them to understand how many rows matched, not to compare result-set sizes.
+---
 
-## Step 7: evaluate headline questions
+## Run
 
-Evaluate 20 mixed queries (10 keyword-style and 10 natural-language paraphrases) across
-SQL LIKE, SQL Full-Text, Vector Search (unfiltered), and Vector Search (with subject filter):
-
-```powershell
-py benchmark/evaluate_questions.py
-```
-
-- Ground truth is configured in `benchmark/questions.json` (`expected_file` and `expected_page`).
-- A "hit" occurs when the expected file and page appear within the top 5 results.
-- Missing ground-truth entries print a warning and are excluded from hit-rate calculations.
-- Detailed results are saved to `benchmark/results/questions_results.csv`.
-
-## Step 8: interactive web app (Streamlit)
-
-Launch the interactive comparison UI to search notes across SQL LIKE, SQL Full-Text, and Qdrant Vector search side-by-side, or upload new PDF notes:
-
-```powershell
+```bash
+# Demo app (upload PDFs in the sidebar, search in the main area)
 streamlit run app.py
 ```
+
+| Task | Command |
+|---|---|
+| Ingest a PDF | use the app sidebar, or call `ingest_pdf(path, subject, user_id)` from `src/ingest.py` |
+| Retry failed ingestion jobs | `python database/retry_worker.py` |
+| Failure-recovery proof | `python database/test_failure_recovery.py "<small.pdf>"`, then `--cleanup` |
+| Build 1k, 10k, 50k datasets | `python benchmark/generate_data.py` |
+| Check query keywords exist | `python benchmark/check_queries.py` |
+| Full benchmark | `python benchmark/run_benchmarks.py` (use `--quick` for a short test) |
+| gRPC vs HTTP experiment | `python benchmark/run_qdrant_tuning.py` |
+| Questions evaluation | `python benchmark/evaluate_questions.py` |
+
+Results are written to `benchmark/results/`. All numbers below come from those files.
+
+---
+
+## Results
+
+Test machine and library versions are in `benchmark/results/environment.txt`.
+Datasets of 1,000, 10,000 and 50,000 chunks. The real note pool has 8,452 chunks; larger sizes are padded by repeating real chunks.
+
+### 1. Keyword search scaling (p50 latency, count queries so every row is scanned)
+
+| Size | LIKE (full scan) | Full-text (GIN) |
+|---|---|---|
+| 1k | 3.55 ms | 0.37 ms |
+| 10k | 28.36 ms | 0.41 ms |
+| 50k | 135.59 ms | 0.56 ms |
+
+`LIKE '%word%'` cannot use a B-tree index, so it reads every row and grows roughly linearly with data size. The GIN index stays almost flat. Query plans are in `docs/explain_evidence.txt`.
+
+### 2. Vector search: HNSW vs exact, and gRPC vs HTTP (client-side p50)
+
+| Size | Exact, HTTP | Exact, gRPC | HNSW ef16, gRPC |
+|---|---|---|---|
+| 1k | 12.5 to 15.9 ms | 1.93 ms | 1.81 ms |
+| 10k | 10.6 to 17.2 ms | 4.38 ms | 4.26 ms |
+| 50k | 15.5 to 20.8 ms | 5.86 ms | 2.99 ms |
+
+- Most of the earlier Qdrant latency was HTTP overhead. gRPC was about 3x to 8x faster.
+- HNSW showed no clear advantage at 1k and 10k. It was about 2x faster than exact search only at 50k.
+- Recall@5 was 1.0 at source level everywhere. At point level, HNSW with `ef=16` scored 0.95 at 50k, the only value below 1.0. This is the latency vs recall trade-off.
+- Full numbers: `benchmark/results/results.csv` and `qdrant_tuning.csv`. Graphs: `latency_vs_size.png`, `recall_vs_latency.png`.
+
+### 3. Search by meaning (5 hand-labelled paraphrase questions)
+
+| Method | Correct page in top 5 |
+|---|---|
+| SQL LIKE | 0 of 5 |
+| SQL full-text | 0 of 5 |
+| Vector search | 2 of 5 |
+| Vector + subject filter | 4 of 5 |
+
+The subject filter (Qdrant payload filtering) helped because the large textbook outranked the smaller class notes for non-DBMS questions.
+
+### Index and load times (`benchmark/results/dataset_build.csv`)
+
+| Size | Postgres load | GIN build | Qdrant upload |
+|---|---|---|---|
+| 1k | 0.09 s | 0.09 s | 0.17 to 0.23 s |
+| 10k | 0.33 to 0.44 s | 0.62 to 0.63 s | 2.4 to 2.8 s |
+| 50k | 1.54 s | 3.02 s | 11.9 s |
+
+Qdrant reported the HNSW index ready within one 2-second polling interval after upload at every size, so the true wait is below about 2 s and was not measured more finely.
+
+---
+
+## Limitations
+
+- The 10k and 50k sets are padded by repeating real chunks (about 83% of the 50k set), so recall is only a rough measure.
+- Only 5 of 20 questions have hand-labelled ground truth, so the questions table is a small demo, not an accuracy figure.
+- LIKE and full-text score 0 on paraphrases partly by construction: natural-language questions rarely contain the exact words, and `plainto_tsquery` requires every word to match.
+- Qdrant timings are client-side. Server-side time was not available from the client API.
+- At these sizes brute-force search is already cheap. HNSW is expected to pay off at much larger scale; this project does not test that.
+- The retry worker is run manually, not as a background service.
+
+---
+
+## When not to use a vector database
+
+- When users search for exact terms, codes or names, a full-text index is faster and exact.
+- When the data is small, exact search is cheap and simpler.
+- When you need strict transactions across the data, a relational database is the better fit.
+
+A practical design uses both: keyword search for exact matches, vector search for meaning, and metadata filters to narrow results.
+
+
+---
+
+## Team
+
+Nandhitha Ratan (160625733053)
+Shikha Maity (160625733060)
+Under the guidance of 
+Dr. P.R. Anisha 
+(associate professor, SCETW)
+## References
+
+- Malkov, Y. and Yashunin, D., *Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs* (verify the citation details on Google Scholar).
+- PostgreSQL documentation: full-text search and GIN indexes.
+- Qdrant documentation: HNSW indexing and payload filtering.

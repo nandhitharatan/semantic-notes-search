@@ -15,17 +15,21 @@ No LLM is used. The focus is database design, indexing, consistency and benchmar
 ![App screenshot](docs/screenshots/app_three_columns.png)
 
 ---
+## Tech stack
 
+| Layer               | Technology                                                                         |
+| ------------------- | ---------------------------------------------------------------------------------- |
+| Language            | Python 3.10+                                                                       |
+| Relational database | PostgreSQL 15 (B-tree index, GIN full-text index), driver psycopg2-binary          |
+| Vector database     | Qdrant (HNSW index, cosine distance, payload filtering), qdrant-client over gRPC   |
+| Embeddings          | sentence-transformers, model all-MiniLM-L6-v2 (384 dimensions), runs locally       |
+| PDF parsing         | pypdf                                                                              |
+| Frontend            | Streamlit                                                                          |
+| Benchmarking        | pandas, matplotlib                                                                 |
+| Infrastructure      | Docker Compose (PostgreSQL and Qdrant containers), python-dotenv for configuration |
 ## Architecture (polyglot persistence)
 
-```
-PDF -> pypdf -> 500-character chunks -> PostgreSQL (users, documents, chunks, ingestion_jobs)
-                                     -> embeddings (all-MiniLM-L6-v2, 384 dims)
-                                     -> Qdrant (collection notes_chunks)
-
-Question -> LIKE / full-text  -> PostgreSQL
-         -> embedding -> vector search -> Qdrant
-```
+![Architecture](docs/architecture.png)
 
 - **PostgreSQL** stores users, documents, chunks and ingestion jobs, plus a B-tree index on `documents(subject)` and a GIN index for full-text search.
 - **Qdrant** stores one vector per chunk. Cosine distance, HNSW `m=16`, `ef_construct=100`. Payload: `doc_id`, `subject`, `chunk_index`, `text`.

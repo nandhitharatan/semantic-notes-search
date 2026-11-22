@@ -193,12 +193,30 @@ A practical design uses both: keyword search for exact matches, vector search fo
 ## Team
 
 Nandhitha Ratan (160625733053)
+
 Shikha Maity (160625733060)
+
 Under the guidance of 
+
 Dr. P.R. Anisha 
+
 (associate professor, SCETW)
+
+
 ## References
 
-- Malkov, Y. and Yashunin, D., *Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs* (verify the citation details on Google Scholar).
-- PostgreSQL documentation: full-text search and GIN indexes.
-- Qdrant documentation: HNSW indexing and payload filtering.
+### Papers
+1. Y. A. Malkov and D. A. Yashunin, "[Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs](https://arxiv.org/abs/1603.09320)", IEEE Transactions on Pattern Analysis and Machine Intelligence, 2020 ([IEEE Xplore](https://ieeexplore.ieee.org/document/8594636)). The HNSW index used by Qdrant.
+2. N. Reimers and I. Gurevych, "[Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks](https://aclanthology.org/D19-1410)", EMNLP-IJCNLP 2019, pp. 3982–3992. The basis of the sentence-transformers library.
+3. W. Wang, F. Wei, L. Dong, H. Bao, N. Yang and M. Zhou, "[MiniLM: Deep Self-Attention Distillation for Task-Agnostic Compression of Pre-Trained Transformers](https://papers.nips.cc/paper/2020/hash/3f5ee243547dee91fbd053c1c4a845aa-Abstract.html)", Advances in Neural Information Processing Systems 33 (NeurIPS 2020). The model family behind all-MiniLM-L6-v2.
+
+### Book
+4. A. Silberschatz, H. F. Korth and S. Sudarshan, [*Database System Concepts*](https://db-book.com/), 7th ed., McGraw-Hill, 2019.
+
+### Documentation
+5. PostgreSQL 15 documentation: [Full Text Search](https://www.postgresql.org/docs/15/textsearch.html) and [GIN indexes](https://www.postgresql.org/docs/15/gin.html).
+6. Qdrant documentation: [Indexing](https://qdrant.tech/documentation/concepts/indexing) and [Filtering in Vector Search: When to Use What](https://qdrant.tech/documentation/search-patterns/vector-search-filtering/).
+7. [Sentence-Transformers](https://www.sbert.net), [gRPC](https://grpc.io/docs/), [Streamlit](https://docs.streamlit.io) and [pypdf](https://pypdf.readthedocs.io) documentation.
+
+### Design pattern
+8. C. Richardson, "[Pattern: Transactional outbox](https://microservices.io/patterns/data/transactional-outbox)", microservices.io. The idea behind the PENDING job and the retry worker.
